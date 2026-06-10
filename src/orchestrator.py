@@ -140,11 +140,13 @@ class Session:
         if not self.flush_buffer:
             return
         batch, self.flush_buffer = self.flush_buffer, []
+        # Prices formatted to the column scale — a raw float repr like
+        # 2447.4400000000005 parses as DECIMAL(16,12) and fails the INSERT.
         values = ", ".join(
             f"('{c.session_id}','{c.position_id}','{c.setup_id}',"
             f"'{c.note_id}','{c.ticker}','{c.asset_class}',{c.quantity},"
-            f"{c.entry_price},DATE '{c.entry_date}',{c.exit_price},"
-            f"DATE '{c.exit_date}','{c.exit_reason}',{c.realized_pnl},"
+            f"{c.entry_price:.4f},DATE '{c.entry_date}',{c.exit_price:.4f},"
+            f"DATE '{c.exit_date}','{c.exit_reason}',{c.realized_pnl:.2f},"
             f"{c.holding_days},{c.exit_date.year},{c.exit_date.month})"
             for c in batch)
         try:
