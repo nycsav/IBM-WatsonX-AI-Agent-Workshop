@@ -1,0 +1,694 @@
+openapi: 3.1.0
+info:
+  title: TradeCrew — Multi-Agent Trading System API
+  version: 0.1.0
+  summary: Control & observation API for the TradeCrew paper-trading agents.
+  description: |
+    REST surface over the TradeCrew orchestrator (watsonx.data workshop,
+    user-31, financial domain). The agents run autonomously (REQ-020);
+    this API exists to start/stop sessions, observe them (quick-glance
+    snapshot, decision log), intervene (close/halt), and audit history.
+
+    Every operation declares the requirement IDs it satisfies via the
+    `x-requirement-ids` extension (see Requirements.md Draft v3).
+
+    Implementation stack: Python 3.11 · FastAPI + Uvicorn (this API) ·
+    asyncio orchestrator · cassandra-driver (hot state, TLS :443 route
+    pin) · Presto over HTTPS (federated/analytical reads, bearer token).
+  contact:
+    name: user-31 (workshop attendee)
+servers:
+  - url: http://localhost:8031/v1
+    description: Local orchestrator on the attendee laptop
+
+tags:
+  - name: Sessions
+    description: Start, observe, halt trading sessions (UF-1, UF-3)
+  - name: Research
+    description: Researcher agent output (REQ-001..003)
+  - name: Trading
+    description: Trade setups and executed orders (REQ-004..008, 019, 020)
+  - name: Positions
+    description: Live positions, monitoring state, manual exits (REQ-009..011)
+  - name: Reporting
+    description: Snapshot, summary, P/L, decision log (REQ-014..016, 021, 022)
+  - name: Audit
+    description: Closed trades and full audit chains (REQ-012, UF-4)
+
+paths:
+
+  /sessions:
+    post:
+      operationId: startSession
+      tags: [Sessions]
+      summary: Start an autonomous trading session
+      description: >
+        Boots the market clock, creates per-session tables if needed
+        (idempotent), and launches all four agents. Returns immediately;
+        the session runs unattended.
+      x-requirement-ids: [REQ-013, REQ-017, REQ-018, REQ-020]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionConfig'
+      responses:
+        '201':
+          description: Session created and running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '409':
+          description: A session is already running (single-operator system).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listSessions
+      tags: [Sessions]
+      summary: List sessions (current and past)
+      x-requirement-ids: [REQ-017]
+      responses:
+        '200':
+          description: Sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: getSession
+      tags: [Sessions]
+      summary: Session status
+      x-requirement-ids: [REQ-013, REQ-017]
+      responses:
+        '200':
+          description: Current session state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/halt:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      operationId: haltSession
+      tags: [Sessions]
+      summary: Halt the session (UF-3)
+      description: >
+        Stops opening new positions. Open positions are closed at current
+        market price (exit_reason=trader) unless `keepPositions=true`.
+      x-requirement-ids: [REQ-010, REQ-020]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keepPositions:
+                  type: boolean
+                  default: false
+                  description: Halt new entries but let the Monitor manage existing positions to plan.
+      responses:
+        '200':
+          description: Session halted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Session already ended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/research-notes:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listResearchNotes
+      tags: [Research]
+      summary: Research notes published this session
+      x-requirement-ids: [REQ-001, REQ-002, REQ-003]
+      parameters:
+        - name: shortlistedOnly
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Notes, newest first, conviction-ranked within a scan.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResearchNote'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/setups:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listSetups
+      tags: [Trading]
+      summary: Trade setups (proposed, approved, rejected, executed)
+      description: Rejected setups carry the guardrail that triggered (AC-6.1).
+      x-requirement-ids: [REQ-004, REQ-005, REQ-006, REQ-019]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [proposed, approved, rejected, executed]
+      responses:
+        '200':
+          description: Setups, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TradeSetup'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/orders:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listOrders
+      tags: [Trading]
+      summary: Order log (entries and exits)
+      x-requirement-ids: [REQ-007, REQ-008]
+      responses:
+        '200':
+          description: Orders, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/positions:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listPositions
+      tags: [Positions]
+      summary: Open positions with live monitoring state
+      description: >
+        Each position carries current price, unrealized P/L, current
+        (possibly trailed) stop, and last monitoring cycle date.
+      x-requirement-ids: [REQ-009, REQ-011, REQ-021]
+      responses:
+        '200':
+          description: Open positions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/positions/{positionId}/close:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/PositionId'
+    post:
+      operationId: closePosition
+      tags: [Positions]
+      summary: Trader-initiated exit (UF-3)
+      description: Closes at current market price; exit_reason=trader.
+      x-requirement-ids: [REQ-010, REQ-012]
+      responses:
+        '200':
+          description: Position closed; the resulting trade record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClosedTrade'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Position already closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/trades:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listClosedTrades
+      tags: [Audit]
+      summary: Closed trades (realized results)
+      x-requirement-ids: [REQ-012]
+      responses:
+        '200':
+          description: Closed trades, newest exit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClosedTrade'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/trades/{positionId}/audit:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+      - $ref: '#/components/parameters/PositionId'
+    get:
+      operationId: getAuditChain
+      tags: [Audit]
+      summary: Full audit chain for one trade (UF-4)
+      description: note → setup → execution → every exit adjustment → exit.
+      x-requirement-ids: [REQ-011, REQ-012, REQ-014]
+      responses:
+        '200':
+          description: The complete decision history of the trade.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditChain'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/snapshot:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: getSnapshot
+      tags: [Reporting]
+      summary: Quick-glance status (REQ-022, UF-2)
+      description: >
+        One screenful, most important figures first; reads hot state only
+        — never disturbs the running session.
+      x-requirement-ids: [REQ-021, REQ-022]
+      responses:
+        '200':
+          description: Compact status snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/summary:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: getSummary
+      tags: [Reporting]
+      summary: Session summary (REQ-015)
+      x-requirement-ids: [REQ-015, REQ-021]
+      responses:
+        '200':
+          description: Reconciled end-of-session figures (also available mid-session as "summary so far").
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Summary'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/pnl:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: getUnifiedPnl
+      tags: [Reporting]
+      summary: Unified hot+cold P/L view (REQ-016 — the federated query)
+      description: >
+        Executes the single federated Presto statement joining live
+        Cassandra positions to Iceberg market data, UNIONed with closed
+        trades — open and realized P/L in one result.
+      x-requirement-ids: [REQ-016, REQ-021]
+      responses:
+        '200':
+          description: One row per open position (marked to market) and per closed trade.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PnlRow'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '504':
+          description: Presto (shared coordinator) exceeded the query deadline; retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /sessions/{sessionId}/log:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: getDecisionLog
+      tags: [Reporting]
+      summary: Human-readable decision log (REQ-014)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Timestamped decision lines, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LogLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-requirement-ids: [REQ-014]
+
+components:
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: TIMEUUID of the session.
+    PositionId:
+      name: positionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    NotFound:
+      description: Unknown sessionId / positionId.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Request body failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UpstreamError:
+      description: A workshop data store (Cassandra or Presto) failed or rejected the request (e.g., expired bearer token re-mint failed).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Unexpected orchestrator error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code.
+          enum:
+            - session_not_found
+            - position_not_found
+            - session_already_running
+            - session_already_ended
+            - position_already_closed
+            - validation_failed
+            - guardrail_violation
+            - upstream_cassandra_error
+            - upstream_presto_error
+            - presto_timeout
+            - internal_error
+        message: { type: string }
+        detail:
+          type: object
+          additionalProperties: true
+          description: e.g. {"guardrail":"max_open_positions"} (AC-6.1)
+
+    SessionConfig:
+      type: object
+      properties:
+        tickSeconds:        { type: number, default: 5, minimum: 0.5, description: Wall-clock seconds per simulated trading day (REQ-013). }
+        lookbackDays:       { type: integer, default: 90, description: History window for research (REQ-001). }
+        shortlistSize:      { type: integer, default: 3, description: REQ-003 cap. }
+        riskPerTradePct:    { type: number, default: 1.0, description: REQ-005. }
+        maxAggregateRiskPct:{ type: number, default: 3.0, description: REQ-006. }
+        maxOpenPositions:   { type: integer, default: 5, description: REQ-006. }
+        assetClassRiskCapPct:
+          type: object
+          additionalProperties: { type: number }
+          default: { "default": 50, "crypto": 30 }
+          description: REQ-019 per-class share of aggregate open risk.
+
+    Session:
+      type: object
+      required: [sessionId, state, simulatedDate, startedAt]
+      properties:
+        sessionId:     { type: string, format: uuid }
+        state:         { type: string, enum: [running, halted, ended] }
+        startedAt:     { type: string, format: date-time }
+        endedAt:       { type: string, format: date-time }
+        simulatedDate: { type: string, format: date, description: Market-clock "today" (REQ-013). }
+        accountId:     { type: string, format: uuid }
+        startingBuyingPower: { type: number }
+        remainingBuyingPower:{ type: number, description: REQ-008. }
+        config:        { $ref: '#/components/schemas/SessionConfig' }
+
+    ResearchNote:
+      type: object
+      required: [noteId, ticker, assetClass, asOfDate, direction, conviction, rationale, shortlisted]
+      properties:
+        noteId:      { type: string, format: uuid }
+        ticker:      { type: string }
+        assetClass:  { type: string, enum: [equity, bond, fx, commodity, crypto] }
+        asOfDate:    { type: string, format: date, description: Simulated date; proves no lookahead (AC-1.2). }
+        direction:   { type: string, enum: [bullish, bearish, neutral] }
+        momentum:    { type: string }
+        volatility:  { type: string, enum: [low, normal, elevated] }
+        conviction:  { type: number, minimum: 0, maximum: 1 }
+        rationale:   { type: string, description: Plain-language analyst explanation (AC-2.1). }
+        shortlisted: { type: boolean }
+
+    TradeSetup:
+      type: object
+      required: [setupId, noteId, ticker, assetClass, direction, entryPrice, quantity, stopLoss, takeProfit, riskAmount, status]
+      properties:
+        setupId:     { type: string, format: uuid }
+        noteId:      { type: string, format: uuid, description: Audit chain ← research note. }
+        ticker:      { type: string }
+        assetClass:  { type: string, enum: [equity, bond, fx, commodity, crypto] }
+        direction:   { type: string, enum: [long] }
+        entryPrice:  { type: number }
+        quantity:    { type: integer, minimum: 1 }
+        stopLoss:    { type: number }
+        takeProfit:  { type: number, description: ≥ 2:1 reward-to-risk vs stop (AC-4.2). }
+        trailRule:   { type: string, examples: ["arm@+1R;trail=1.5xATR"] }
+        riskAmount:  { type: number, description: (entry−stop)×qty at setup time (REQ-005). }
+        status:      { type: string, enum: [proposed, approved, rejected, executed] }
+        rejectReason:{ type: string, description: Guardrail name when rejected (AC-6.1). }
+        createdDate: { type: string, format: date }
+
+    Order:
+      type: object
+      required: [orderId, ticker, side, orderKind, fillPrice, quantity, fillDate]
+      properties:
+        orderId:    { type: string, format: uuid }
+        setupId:    { type: string, format: uuid }
+        positionId: { type: string, format: uuid }
+        ticker:     { type: string }
+        side:       { type: string, enum: [buy, sell] }
+        orderKind:  { type: string, enum: [entry, exit] }
+        fillPrice:  { type: number, description: Within the market's actual traded range (AC-7.1). }
+        quantity:   { type: integer }
+        fillDate:   { type: string, format: date }
+        exitReason: { $ref: '#/components/schemas/ExitReason' }
+
+    Position:
+      type: object
+      required: [positionId, setupId, ticker, assetClass, quantity, entryPrice, entryDate, stopLoss, takeProfit, currentPrice, unrealizedPnl]
+      properties:
+        positionId:    { type: string, format: uuid }
+        setupId:       { type: string, format: uuid }
+        ticker:        { type: string }
+        assetClass:    { type: string, enum: [equity, bond, fx, commodity, crypto] }
+        quantity:      { type: integer }
+        entryPrice:    { type: number }
+        entryDate:     { type: string, format: date }
+        stopLoss:      { type: number, description: CURRENT stop — only ever rises (REQ-011). }
+        initialStop:   { type: number }
+        takeProfit:    { type: number }
+        trailArmed:    { type: boolean }
+        currentPrice:  { type: number, description: Refreshed every monitoring cycle (AC-9.2). }
+        unrealizedPnl: { type: number }
+        lastCheckDate: { type: string, format: date }
+
+    ExitReason:
+      type: string
+      enum: [stop_loss, take_profit, trailing, trader, session_end]
+      description: REQ-010 closed-trade exit reasons (AC-10.1).
+
+    ClosedTrade:
+      type: object
+      required: [positionId, ticker, quantity, entryPrice, entryDate, exitPrice, exitDate, exitReason, realizedPnl, holdingDays]
+      properties:
+        positionId:  { type: string, format: uuid }
+        setupId:     { type: string, format: uuid }
+        noteId:      { type: string, format: uuid }
+        ticker:      { type: string }
+        assetClass:  { type: string, enum: [equity, bond, fx, commodity, crypto] }
+        quantity:    { type: integer }
+        entryPrice:  { type: number }
+        entryDate:   { type: string, format: date }
+        exitPrice:   { type: number }
+        exitDate:    { type: string, format: date }
+        exitReason:  { $ref: '#/components/schemas/ExitReason' }
+        realizedPnl: { type: number }
+        holdingDays: { type: integer }
+
+    ExitAdjustment:
+      type: object
+      required: [adjDate, oldStop, newStop, reason]
+      properties:
+        adjDate: { type: string, format: date }
+        oldStop: { type: number }
+        newStop: { type: number, description: Always ≥ oldStop (AC-11.1). }
+        reason:  { type: string, enum: [trail_armed, trail_raise] }
+
+    AuditChain:
+      type: object
+      description: The full story of one trade (UF-4).
+      required: [note, setup, entryOrder, adjustments, exitOrder, closedTrade]
+      properties:
+        note:        { $ref: '#/components/schemas/ResearchNote' }
+        setup:       { $ref: '#/components/schemas/TradeSetup' }
+        entryOrder:  { $ref: '#/components/schemas/Order' }
+        adjustments:
+          type: array
+          items: { $ref: '#/components/schemas/ExitAdjustment' }
+        exitOrder:   { $ref: '#/components/schemas/Order' }
+        closedTrade: { $ref: '#/components/schemas/ClosedTrade' }
+
+    Snapshot:
+      type: object
+      description: One screenful, most important first (AC-22.1).
+      required: [simulatedDate, realizedPnlToday, openPositions, remainingBuyingPower, recentDecisions]
+      properties:
+        simulatedDate:        { type: string, format: date }
+        realizedPnlToday:     { type: number }
+        realizedPnlSession:   { type: number }
+        unrealizedPnlTotal:   { type: number }
+        remainingBuyingPower: { type: number }
+        openPositions:
+          type: array
+          items: { $ref: '#/components/schemas/Position' }
+        recentDecisions:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/LogLine' }
+
+    Summary:
+      type: object
+      required: [sessionId, tradesOpened, tradesClosed, winRate, realizedPnl, unrealizedPnl, maxDrawdown]
+      properties:
+        sessionId:     { type: string, format: uuid }
+        tradesOpened:  { type: integer }
+        tradesClosed:  { type: integer }
+        winRate:       { type: number, minimum: 0, maximum: 1 }
+        realizedPnl:   { type: number, description: Reconciles exactly with closed trades (AC-15.1). }
+        unrealizedPnl: { type: number }
+        maxDrawdown:   { type: number, description: Worst peak-to-trough on session equity. }
+        byAssetClass:
+          type: object
+          additionalProperties: { type: number }
+          description: Realized P/L per asset class (REQ-019 visibility).
+
+    PnlRow:
+      type: object
+      description: One row of the federated hot+cold query (REQ-016).
+      required: [ticker, state, quantity, entryPrice, markOrExit, pnl]
+      properties:
+        ticker:     { type: string }
+        state:      { type: string, enum: [OPEN, CLOSED] }
+        quantity:   { type: integer }
+        entryPrice: { type: number }
+        markOrExit: { type: number, description: Latest close (OPEN) or exit price (CLOSED). }
+        pnl:        { type: number, description: Unrealized (OPEN) or realized (CLOSED). }
+
+    LogLine:
+      type: object
+      required: [at, agent, message]
+      properties:
+        at:      { type: string, format: date-time }
+        simDate: { type: string, format: date }
+        agent:   { type: string, enum: [RESEARCH, TRADER, EXECUTOR, MONITOR, SESSION] }
+        ticker:  { type: string }
+        message: { type: string, description: Human-readable (AC-14.1), e.g. "AAPL conviction 0.82: uptrend, RSI 61". }
