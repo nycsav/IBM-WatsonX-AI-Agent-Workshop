@@ -82,13 +82,27 @@ class MarketClock:
         return sorted(set(self._classes.values()))
 
 
-async def load_clock(presto, reference_schema: str, lookback: int) -> MarketClock:
-    """B4 — the one bulk query per session."""
-    sql = (f"SELECT ticker, asset_class, quote_date, open_price, high_price,"
-           f" low_price, close_price, volume"
-           f" FROM {reference_schema}.market_data_daily"
-           f" ORDER BY ticker, quote_date")
-    _, rows = await presto.query(sql)
+async def load_clock(presto, reference_schema: str, lookback: int,
+                     ext_schema: Optional[str] = None) -> MarketClock:
+    """B4 — the one bulk query per session. If the attendee's external
+    feed table exists (src/load_crypto.py), union it in — same shape,
+    already clamped to the reference date window."""
+    cols = ("ticker, asset_class, quote_date, open_price, high_price,"
+            " low_price, close_price, volume")
+    sql = f"SELECT {cols} FROM {reference_schema}.market_data_daily"
+    if ext_schema:
+        sql = (f"SELECT * FROM ({sql} UNION ALL SELECT {cols}"
+               f" FROM {ext_schema}.market_data_daily_ext)")
+    sql += " ORDER BY ticker, quote_date"
+    try:
+        _, rows = await presto.query(sql)
+    except Exception:
+        if not ext_schema:
+            raise
+        # ext table absent — fall back to reference only
+        _, rows = await presto.query(
+            f"SELECT {cols} FROM {reference_schema}.market_data_daily"
+            f" ORDER BY ticker, quote_date")
     bars: Dict[str, List[Bar]] = {}
     for t, ac, qd, o, h, lo, c, v in rows:
         bars.setdefault(t, []).append(

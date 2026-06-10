@@ -304,8 +304,13 @@ the workshop:
 
 1. **Real trading** — no brokerage connectivity, no real orders, no real
    funds at risk.
-2. **Real-time external market feeds** — prices come exclusively from the
-   workshop's historical dataset (see REQ-013); no internet price sources.
+2. **Real-time external market feeds** — the live trading loop prices
+   exclusively from data already in the cluster (see REQ-013).
+   *Amended (v3.1)*: a **one-time batch load** of real crypto OHLCV
+   (Coinbase public candles API, no key) into the attendee's own Iceberg
+   slice is permitted — it lands as cluster data before the session
+   starts, clamped to the reference date window, so the no-live-feeds
+   rule for the trading loop itself still holds.
 3. **Options and other derivatives** — a stated trader goal, but the
    workshop dataset has no options data. Roadmap item; the risk-management
    requirements (REQ-004/005/006) are written to extend to defined-risk

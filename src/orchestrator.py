@@ -92,7 +92,8 @@ class Session:
                  f"risk tier {tier} → trading allowed")
         # B4 — the one bulk market load
         self.clock = await load_clock(self.presto, settings.reference_schema,
-                                      settings.lookback_days)
+                                      settings.lookback_days,
+                                      ext_schema=settings.iceberg_schema)
         self.log("SESSION", "*",
                  f"market loaded: {len(self.clock.tickers())} instruments, "
                  f"classes {self.clock.asset_classes()}, "
