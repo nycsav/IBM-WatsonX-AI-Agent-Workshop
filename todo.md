@@ -137,6 +137,22 @@ verification passes.
       Software Hub UI → summary. Note the wow-line: "one SQL statement
       joins live Cassandra positions to the Iceberg archive."
 
+## Phase 7 — Post-exercise extensions (v3.2 scope)
+
+- [x] **T-22 Crypto feed** — Coinbase public candles → ext Iceberg table,
+      clock union. → REQ-019. *Verified*: ETH traded + take-profit'd live.
+- [x] **T-23 Perplexity enrichment** — Agent API news_context on
+      shortlisted notes, background task, silent degrade. → REQ-023.
+      *Verified*: live June-10 news on AUD/USD, BTC, CORP-IG, ETH notes.
+- [x] **T-24 CORS on FastAPI** — dashboard origin can call the API.
+      *Verify*: browser fetch from Vercel origin succeeds.
+- [x] **T-25 Next.js dashboard (frontend/)** — snapshot, positions, log,
+      P/L, Start/Halt/Close buttons; phone-sized layout. → REQ-024.
+      *Verify*: renders live session; close button produces
+      exit_reason='trader'.
+- [x] **T-26 Vercel deploy** — `vercel --prod`; NEXT_PUBLIC_API_BASE
+      env; README note. *Verify*: public URL renders against local API.
+
 ---
 
 ## Stretch (only if time remains)
@@ -147,5 +163,6 @@ verification passes.
 
 ## Deliberately not doing (per Requirements.md §5)
 
-Options/RWA data, real feeds, shorting, ML models, GUI/mobile app,
-fees/slippage, auth, cluster admin.
+Options/RWA data, live trading-loop feeds, shorting, ML models, native
+mobile app, fees/slippage, auth, cluster admin. (Web dashboard and
+batch crypto/news feeds moved INTO scope in v3.2 — see Phase 7.)

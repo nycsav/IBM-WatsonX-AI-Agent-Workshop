@@ -12,6 +12,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -19,6 +20,11 @@ from .orchestrator import Session
 
 app = FastAPI(title="TradeCrew — Multi-Agent Trading System API",
               version="0.1.0")
+
+# REQ-024: the Vercel-hosted dashboard calls this API from the browser.
+# Paper-trading workshop app, no credentials — permissive CORS is fine.
+app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                   allow_methods=["*"], allow_headers=["*"])
 
 SESSIONS: Dict[str, Session] = {}
 TASKS: Dict[str, asyncio.Task] = {}

@@ -2,7 +2,9 @@
 
 **Workshop**: watsonx.data shared-cloud workshop · June 10, 2026
 **Attendee**: user-31 · **Domain**: Financial
-**Document status**: Draft v3 — requirements only; no implementation details.
+**Document status**: v3.2 — v3 baseline + post-exercise extensions
+(REQ-023 news enrichment, REQ-024 web dashboard; out-of-scope items 2
+and 6 amended accordingly).
 
 ---
 
@@ -286,6 +288,25 @@ setup steps causes no errors or data loss.
 - AC-2: Records from earlier sessions remain queryable and distinguishable
   by session.
 
+### Post-exercise extensions (v3.2)
+
+**REQ-023 — Research news enrichment.** Shortlisted research notes shall
+be enriched with current, plain-language market context from a live
+search service, attached to the note and visible in the decision log.
+- AC-1: Enrichment never blocks or delays the trading loop; it runs in
+  the background and trades proceed identically with or without it.
+- AC-2: When the enrichment service or its key is unavailable, the
+  system degrades silently — no errors, no missing-note rows.
+
+**REQ-024 — Web dashboard.** A browser-based dashboard shall present the
+quick-glance snapshot (REQ-022), open positions, the decision log, and
+session summary, and offer the UF-3 interventions (close position,
+halt), consuming only the system's public API.
+- AC-1: The dashboard renders the full session story (positions, P/L,
+  log, news context) on a phone-sized viewport — the persona's device.
+- AC-2: Close/halt actions from the dashboard produce the same recorded
+  outcomes as the API calls they wrap (exit_reason 'trader').
+
 ### Workshop boundaries
 
 **REQ-018 — Data stewardship.** The system shall only write within the
@@ -322,11 +343,10 @@ the workshop:
    instruments and REQ-001/019 cover them.)*
 5. **Short selling and leverage** — long-only, fully-funded spot positions
    across the available asset classes.
-6. **A native mobile app, push notifications, or any graphical UI** — the
-   trader persona is mobile-first, but the workshop build's interface is
-   the decision log, the quick-glance snapshot, and queryable records
-   (browsable in the platform's existing UI). Mobile delivery of the
-   snapshot/summary is a roadmap item.
+6. **A native mobile app and push notifications** — *amended (v3.2)*: a
+   responsive **web dashboard is now IN scope** (REQ-024, deployed on
+   Vercel, consuming the FastAPI surface). Native apps and push
+   notifications remain out of scope.
 7. **Machine-learned models** — conviction and setups follow stated rules;
    no model training; the workshop's fraud/ML datasets are unused.
 8. **User management and authentication** — single trader, workshop

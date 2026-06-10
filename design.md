@@ -411,7 +411,48 @@ paths touch it, monitor cadence is Cassandra-only; partial close (M5
 Cassandra OK, Iceberg insert pending) → closed-trade buffer retries at
 next tick and at session end (no monitoring stall, no lost trades).
 
-## 8. Decisions taken on open questions (defaults, reversible)
+## 8. Post-exercise extensions (v1.1)
+
+### 8.1 External crypto feed (REQ-019 enablement)
+The shared reference feed has no crypto rows. `src/load_crypto.py`
+batch-loads real BTC/ETH/SOL daily OHLCV from Coinbase Exchange's
+public candles API (no key) into the attendee slice
+(`financial_user31.market_data_daily_ext`), clamped to the reference
+date window. `load_clock` unions reference + ext in the same single
+bulk query; graceful fallback when the ext table is absent.
+
+### 8.2 Perplexity news enrichment (REQ-023)
+`src/db/perplexity.py` calls the **Agent API** (`POST /v1/agent`,
+`fast-search` preset — web search tool + completion, ~$0.01/note).
+Orchestrator fires it as a background task for shortlisted notes only;
+results land in `research_notes.news_context` (added column, idempotent
+ALTER) via a partition-keyed UPDATE. Same import discipline as Presto:
+agents never touch it (design §4.7 extended).
+
+### 8.3 Frontend & deployment (REQ-024)
+```
+Browser (phone/desktop)
+   │ https
+   ▼
+Vercel — Next.js dashboard (frontend/)        static + client-side polling
+   │ fetch → NEXT_PUBLIC_API_BASE (default http://localhost:8031)
+   ▼
+FastAPI orchestrator (src/api.py, laptop)     + CORS middleware
+   │ CQL :443 (hot)        │ Presto HTTPS :443 (analytics)
+   ▼                       ▼
+Cassandra financial_user31  iceberg_data.financial_user31 + _reference
+```
+- Dashboard polls `/snapshot`, `/positions`, `/log`, `/pnl`, `/summary`
+  every few seconds; Start/Halt/Close buttons wrap the existing API.
+- Browsers treat `http://localhost` as a secure context, so the
+  Vercel-served page may call the locally-running API on the same
+  machine. For remote access, the API moves to a host (Fly/Cloud
+  Run/IBM Code Engine) and `NEXT_PUBLIC_API_BASE` is repointed.
+- The workshop cluster is temporary; post-teardown the data plane must
+  be replaced (watsonx.data SaaS or self-hosted Cassandra+Trino+Iceberg)
+  before the dashboard has anything to show.
+
+## 9. Decisions taken on open questions (defaults, reversible)
 
 1. Account: highest-balance active `investment` account (B1).
 2. Per-class risk cap: 50%; **crypto tightened to 30%** of aggregate
