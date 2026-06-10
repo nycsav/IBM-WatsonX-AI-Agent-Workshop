@@ -9,13 +9,13 @@ verification passes.
 
 ## Phase 0 — Skeleton & config
 
-- [ ] **T-01 Project skeleton** — create `src/` layout per design §7
+- [x] **T-01 Project skeleton** — create `src/` layout per design §7
       (`config.py`, `db/`, `market/`, `agents/`, `orchestrator.py`,
       `setup_tables.py`, `main.py`), `tests/`, `requirements.txt`
       (httpx, fastapi, uvicorn, pydantic, python-dotenv, rich, pytest;
       cassandra-driver already in `.venv`).
       *Verify*: `python -c "import src"` runs from the venv.
-- [ ] **T-02 Config module** — `src/config.py` loads `.env` + defaults
+- [x] **T-02 Config module** — `src/config.py` loads `.env` + defaults
       (TICK_SECONDS=5, LOOKBACK=90, SHORTLIST=3, RISK_PCT=1.0,
       AGG_RISK_PCT=3.0, MAX_POSITIONS=5, CLASS_CAPS={default:50, crypto:30}).
       → REQ-013, design §8.
@@ -23,18 +23,18 @@ verification passes.
 
 ## Phase 1 — Connections (mirror smoke_test.py exactly)
 
-- [ ] **T-03 Cassandra client** — `src/db/cassandra.py`: TLS :443, SNI,
+- [x] **T-03 Cassandra client** — `src/db/cassandra.py`: TLS :443, SNI,
       `check_hostname=False`, **RouteEndPointFactory pin** (AGENTS.md
       detail #4), auth from `.env`, keyspace `financial_user31`.
       → design §7, NFR-2.
       *Verify*: `SELECT COUNT(*) FROM customers` returns 1184-ish in <2s,
       no connect stall.
-- [ ] **T-04 Presto client** — `src/db/presto.py`: bearer mint via
+- [x] **T-04 Presto client** — `src/db/presto.py`: bearer mint via
       `/icp4d-api/v1/authorize` (cache ~12h, remint-once on 401),
       `/v1/statement` POST + `nextUri` polling, `X-Presto-User` header.
       → design §7 failure handling.
       *Verify*: `SHOW SCHEMAS FROM iceberg_data` lists financial_user31.
-- [ ] **T-05 Table DDL** — `src/setup_tables.py`: 5 Cassandra tables
+- [x] **T-05 Table DDL** — `src/setup_tables.py`: 5 Cassandra tables
       (research_notes, trade_setups, positions_open, orders,
       exit_adjustments) + Iceberg trades_closed, all `IF NOT EXISTS`
       per design §3. → REQ-017, REQ-018.
@@ -43,11 +43,11 @@ verification passes.
 
 ## Phase 2 — Market clock (the simulation heart)
 
-- [ ] **T-06 Bulk OHLCV load** — B4 query into
+- [x] **T-06 Bulk OHLCV load** — B4 query into
       `{ticker → [bars asc]}`; discover tickers + asset classes
       (REQ-001/AC-3: log every class found).
       *Verify*: log line "loaded N tickers / M bars / classes: …".
-- [ ] **T-07 Clock replay** — `clock.today()`, `clock.bar(t)`,
+- [x] **T-07 Clock replay** — `clock.today()`, `clock.bar(t)`,
       `clock.history(t, n)`, lookback/replay split, async tick task,
       **no-lookahead guard raises** on future dates. → REQ-013, AC-1.2.
       *Verify (pytest)*: requesting tomorrow's bar raises; two tasks
@@ -55,26 +55,26 @@ verification passes.
 
 ## Phase 3 — Agents
 
-- [ ] **T-08 Researcher** — SMA-20/50, RSI-14, ATR-14, 20d vol,
+- [x] **T-08 Researcher** — SMA-20/50, RSI-14, ATR-14, 20d vol,
       breakout distance → conviction 0–1 + plain-language rationale;
       shortlist top-K **with class spread** (REQ-019/AC-2); insert
       research_notes (R2); skip-with-reason on short history (AC-1.1).
       → REQ-001..003.
       *Verify (pytest)*: known fixture series → expected direction +
       conviction; shortlist ≤ K and ≥2 classes when available.
-- [ ] **T-09 Trader** — guardrail read T2 (one partition), sizing
+- [x] **T-09 Trader** — guardrail read T2 (one partition), sizing
       (1% risk; reject if min size breaches — AC-5.2), 2:1 R:R target
       (AC-4.2), guardrails: max positions, agg risk, class caps,
       risk_tier gate (B2); persist approved/rejected + reject_reason.
       → REQ-004..006, 019.
       *Verify (pytest)*: table of guardrail scenarios → correct
       reject_reason each (AC-6.1); sizing math exact (AC-5.1).
-- [ ] **T-10 Executor** — next-tick-open fills (E2, AC-7.1), batch
+- [x] **T-10 Executor** — next-tick-open fills (E2, AC-7.1), batch
       write orders+positions_open+setup status (E3), buying-power
       ledger (REQ-008: committed+remaining == starting, AC-8.1).
       *Verify (pytest)*: fill price == next bar open; ledger invariant
       holds across opens/closes; insufficient power → reject (AC-8.2).
-- [ ] **T-11 Monitor** — per-tick cycle M1–M5: refresh price/uPnL
+- [x] **T-11 Monitor** — per-tick cycle M1–M5: refresh price/uPnL
       (AC-9.2), exit priority stop→target→trail (REQ-010), trail
       arm@+1R / raise-never-lower + exit_adjustments rows (REQ-011),
       close → orders(exit) + delete + buffered Iceberg trades_closed
@@ -85,54 +85,54 @@ verification passes.
 
 ## Phase 4 — Orchestrator & observability
 
-- [ ] **T-12 Orchestrator** — session lifecycle (TIMEUUID session_id),
+- [x] **T-12 Orchestrator** — session lifecycle (TIMEUUID session_id),
       B1 account pick + B2 gate, research → trade → execute pipeline +
       monitor loop, periodic re-research, halt/end states, zero
       prompts (REQ-020/AC-1). → design §1.
       *Verify*: `python main.py` runs a full unattended session to
       summary with ≥1 closed trade in <5 min.
-- [ ] **T-13 Decision log** — rich console: `[12:01:14 d=2025-08-12]
+- [x] **T-13 Decision log** — rich console: `[12:01:14 d=2025-08-12]
       RESEARCH AAPL conviction 0.82: …` for every material decision.
       → REQ-014.
       *Verify*: read the log of a run aloud — the story is complete
       (AC-14.1).
-- [ ] **T-14 Snapshot & summary** — S1 (Cassandra-only snapshot table,
+- [x] **T-14 Snapshot & summary** — S1 (Cassandra-only snapshot table,
       one screenful, REQ-021/022) + S2 summary (win rate, realized vs
       unrealized, max drawdown) printed at session end (REQ-015).
       *Verify*: snapshot under one screen; summary totals reconcile
       with trades_closed rows (AC-15.1/21.2).
-- [ ] **T-15 Federated P/L query** — §4.6 statement wired up
+- [x] **T-15 Federated P/L query** — §4.6 statement wired up
       (REQ-016): hot positions_open ⋈ market_data_daily ∪ trades_closed.
       *Verify*: run mid-session with ≥1 open and ≥1 closed trade —
       one result set shows both, marks match clock prices (AC-16.1/2).
 
 ## Phase 5 — API layer (openapi.yaml surface)
 
-- [ ] **T-16 FastAPI app** — all 14 operations, Pydantic models
+- [x] **T-16 FastAPI app** — all 14 operations, Pydantic models
       mirroring openapi.yaml schemas, Error model with machine codes,
       404/409/422/502/504 mapping. → openapi.yaml.
       *Verify*: `GET /v1/sessions/{id}/snapshot` + `/pnl` against a
       live session; FastAPI's generated spec diff vs openapi.yaml —
       no missing operations.
-- [ ] **T-17 Intervention endpoints** — `POST …/halt`,
+- [x] **T-17 Intervention endpoints** — `POST …/halt`,
       `POST …/positions/{id}/close` (UF-3; exit_reason=trader).
       *Verify*: close one position mid-run via curl; trades_closed row
       has exit_reason='trader'.
 
 ## Phase 6 — Acceptance & demo
 
-- [ ] **T-18 AC test sweep** — pytest suite green per `test-plan.md`
+- [x] **T-18 AC test sweep** — pytest suite green per `test-plan.md`
       (every REQ has at least one passing test).
-- [ ] **T-21 Routing invariant check** — design §4.7: hot reads are
+- [x] **T-21 Routing invariant check** — design §4.7: hot reads are
       Cassandra-direct single-partition; analytics are Presto
       (Iceberg or federated). Pytest guard: `agents/monitor|trader|
       executor` never import the Presto client; Cassandra module
       exposes only partition-keyed prepared statements.
       *Verify*: guard test green + grep shows no Presto import in agents/.
-- [ ] **T-19 Repeatability** — two consecutive sessions, no cleanup
+- [x] **T-19 Repeatability** — two consecutive sessions, no cleanup
       (AC-17.1); both sessions queryable by session_id (AC-17.2);
       pre-loaded customers/accounts untouched (AC-18.2).
-- [ ] **T-20 Demo script** — 3-minute walkthrough: start session →
+- [x] **T-20 Demo script** — 3-minute walkthrough: start session →
       watch decision log → mid-run snapshot → federated P/L query in
       Software Hub UI → summary. Note the wow-line: "one SQL statement
       joins live Cassandra positions to the Iceberg archive."
