@@ -1,13 +1,49 @@
-# TradeCrew — Multi-Agent Trading System
+# TradeCrew — Multi-Agent AI Trading Platform
 
-Built spec-first at the **IBM watsonx.data workshop, June 10 2026**
-(attendee user-31, financial domain). Four autonomous agents —
-**Researcher → Trader → Executor → Monitor** — paper-trade a simulated
-live market on a Cassandra (hot) + Iceberg (cold) data fabric federated
-by Presto, with strict risk management and a full audit trail.
+[![IBM watsonx.data](https://img.shields.io/badge/IBM-watsonx.data-0f62fe?logo=ibm)](https://www.ibm.com/products/watsonx-data)
+[![Anthropic Claude](https://img.shields.io/badge/Anthropic-Claude%20Fable%205-d97757)](https://claude.com/claude-code)
+[![Perplexity](https://img.shields.io/badge/Perplexity-Agent%20API-20b8cd)](https://docs.perplexity.ai)
+[![Vercel](https://img.shields.io/badge/Vercel-deployed-000000?logo=vercel)](https://tradecrew-dashboard.vercel.app)
+[![Tests](https://img.shields.io/badge/tests-33%20passing-3fb950)](test-plan.md)
+
+Four autonomous agents — **Researcher → Trader → Executor → Monitor** —
+paper-trade a simulated live market across five asset classes on an
+AI-ready data platform: Apache Cassandra (hot operational store) and
+Apache Iceberg (cold analytical archive), federated by the Presto
+engine on **IBM watsonx.data**, with hard risk guardrails and a
+complete per-trade audit trail. Built **spec-first** (requirements →
+design → OpenAPI → tasks → tests → code) entirely through agentic
+coding.
 
 **Live dashboard**: https://tradecrew-dashboard.vercel.app
 *(needs the local API running — see below)*
+
+## Built at IBM TechXchange
+
+This project was designed and shipped end-to-end in a single afternoon
+at **"How to Provide Agents an AI-Ready Data Platform" — an
+[IBM TechXchange Workshop](https://www.ibm.com/events/reg/flow/ibm/caa9mtmb/landing/page/landing)**,
+held **June 10, 2026 at IBM Innovation Studio New York** (1 Madison
+Avenue, NYC). The workshop pairs spec-driven development and agentic
+coding with a governed, federated data foundation on IBM watsonx.data —
+this repository is the resulting real, working application, presented
+by **[Enso Labs](https://ensolabs.ai)** (Sav Banerjee). Workshop
+infrastructure and sample-data bundle by the IBM watsonx.data workshop
+team via [IBM TechZone](https://techzone.ibm.com)
+([bundle repo](https://github.com/jamesc127/wxd-workshop-bundles)).
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| Lakehouse / data fabric | **IBM watsonx.data** — Presto federated query engine over **Apache Iceberg** (Parquet on object storage); deployed on Red Hat OpenShift via IBM TechZone; authenticated through IBM Software Hub (Cloud Pak for Data API) |
+| Hot operational store | **Apache Cassandra** (TLS-passthrough OpenShift route, per-user keyspaces) |
+| Agentic coding | **Anthropic Claude Fable 5** via **Claude Code** — wrote the spec stack, all application code, tests, and this README from the workshop's schemas |
+| Live market intelligence | **Perplexity Agent API** (`/v1/agent`, web-search tooling) enriching research signals with real-time news |
+| Crypto market data | **Coinbase Exchange** public candles API (BTC/ETH/SOL daily OHLCV) |
+| Backend | Python 3.9 · asyncio · FastAPI · cassandra-driver · httpx |
+| Frontend & hosting | **Next.js 14** on **Vercel** |
+| Spec & quality | OpenAPI 3.1 contract · pytest (33 tests, every requirement covered) |
 
 ## How the agents connect
 
