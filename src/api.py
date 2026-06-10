@@ -81,6 +81,83 @@ def session_json(s: Session) -> dict:
     }
 
 
+# --- Health (all connectors) -----------------------------------------------
+@app.get("/v1/health")
+async def health():
+    """Live status of every connector the system depends on."""
+    import time as _t
+    import httpx as _hx
+    from .config import settings as cfg
+    from .db import cassandra as cass
+    from .db.presto import PrestoClient
+
+    out = {}
+
+    def _ok(name, t0, detail=""):
+        out[name] = {"status": "ok", "ms": round((_t.time() - t0) * 1000),
+                     "detail": detail}
+
+    def _fail(name, e):
+        out[name] = {"status": "fail", "detail": str(e)[:160]}
+
+    t0 = _t.time()                                   # Cassandra (hot store)
+    try:
+        n = cass.connect().execute(
+            "SELECT COUNT(*) FROM accounts").one()[0]
+        _ok("cassandra", t0, f"{cfg.keyspace} reachable, accounts={n}")
+    except Exception as e:
+        _fail("cassandra", e)
+
+    t0 = _t.time()                                   # Presto / watsonx.data
+    p = PrestoClient()
+    try:
+        _, r = await p.query(
+            f"SELECT count(*) FROM {cfg.iceberg_schema}.trades_closed")
+        _ok("presto_watsonx", t0, f"iceberg reachable, archived trades={r[0][0]}")
+    except Exception as e:
+        _fail("presto_watsonx", e)
+    t0 = _t.time()                                   # crypto ext feed
+    try:
+        _, r = await p.query(
+            f"SELECT count(*) FROM {cfg.iceberg_schema}.market_data_daily_ext")
+        _ok("crypto_feed", t0, f"coinbase bars loaded={r[0][0]}")
+    except Exception as e:
+        _fail("crypto_feed", e)
+    finally:
+        await p.close()
+
+    t0 = _t.time()                                   # Coinbase public API
+    try:
+        async with _hx.AsyncClient(timeout=10) as h:
+            r = await h.get("https://api.exchange.coinbase.com/products/BTC-USD/ticker")
+            r.raise_for_status()
+            _ok("coinbase_api", t0, f"BTC-USD live {r.json().get('price')}")
+    except Exception as e:
+        _fail("coinbase_api", e)
+
+    t0 = _t.time()                                   # Perplexity Agent API
+    import os as _os
+    if not _os.environ.get("PERPLEXITY_API_KEY"):
+        out["perplexity"] = {"status": "off",
+                             "detail": "no key — enrichment disabled (by design)"}
+    else:
+        try:
+            async with _hx.AsyncClient(timeout=20) as h:
+                r = await h.post("https://api.perplexity.ai/v1/agent",
+                    headers={"Authorization":
+                             f"Bearer {_os.environ['PERPLEXITY_API_KEY']}"},
+                    json={"preset": "fast-search", "input": "ping",
+                          "max_output_tokens": 16})
+                r.raise_for_status()
+                _ok("perplexity", t0, "agent API authorized")
+        except Exception as e:
+            _fail("perplexity", e)
+
+    out["overall"] = ("ok" if all(v.get("status") in ("ok", "off")
+                                  for v in out.values()) else "degraded")
+    return out
+
+
 # --- Sessions -----------------------------------------------------------------
 @app.post("/v1/sessions", status_code=201)
 async def start_session(body: Optional[SessionConfigBody] = None):

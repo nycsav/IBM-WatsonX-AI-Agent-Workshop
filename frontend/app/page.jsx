@@ -346,6 +346,7 @@ export default function App() {
 
       {/* ============ ACCOUNTS ============ */}
       {tab === "accounts" && <>
+        <Connectors j={j} />
         <section style={{ ...card, margin: "12px 0",
                           borderColor: "#3fb950" }}>
           <div style={{ display: "flex", justifyContent: "space-between",
@@ -460,6 +461,44 @@ function OpenPositions({ open, closePos, compact }) {
     </section>
   );
 }
+function Connectors({ j }) {
+  const [h, setH] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const check = async () => {
+    setLoading(true);
+    try { setH(await j("/health")); } catch { setH({ overall: "unreachable" }); }
+    setLoading(false);
+  };
+  useEffect(() => { check(); }, []);   // eslint-disable-line
+  const NAMES = { cassandra: "Cassandra (hot store)",
+    presto_watsonx: "Presto · watsonx.data", crypto_feed: "Crypto feed (Iceberg ext)",
+    coinbase_api: "Coinbase public API", perplexity: "Perplexity Agent API" };
+  const dot = (s) => ({ ok: "#3fb950", off: "#8b949e", fail: "#f85149" }[s] || "#e3b341");
+  return (
+    <section style={{ ...card, margin: "12px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between",
+                    alignItems: "center", marginBottom: 8 }}>
+        <Hdr style={{ margin: 0 }}>CONNECTORS</Hdr>
+        <button onClick={check} style={{ ...btn("#21262d", true),
+                border: "1px solid #30363d" }}>
+          {loading ? "checking…" : "↻ re-check"}</button>
+      </div>
+      {!h && <Empty>checking connectors…</Empty>}
+      {h && Object.entries(NAMES).map(([k, label]) => (
+        <Row key={k}
+          left={<><span style={{ color: dot(h[k]?.status), fontSize: 13 }}>●</span>
+            {" "}<b>{label}</b>
+            <div style={{ fontSize: 10, color: "#8b949e", marginTop: 1 }}>
+              {h[k]?.detail || "—"}</div></>}
+          right={<span style={{ fontSize: 10.5, color: dot(h[k]?.status),
+                                fontWeight: 700 }}>
+            {(h[k]?.status || "?").toUpperCase()}
+            {h[k]?.ms != null ? ` · ${h[k].ms}ms` : ""}</span>} />
+      ))}
+    </section>
+  );
+}
+
 function Pipeline({ log, running }) {
   return (
     <section style={{ ...card, marginTop: 10, padding: "10px 8px" }}>
