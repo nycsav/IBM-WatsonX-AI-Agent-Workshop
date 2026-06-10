@@ -110,6 +110,41 @@ export default function Dashboard() {
                             color: "#f85149", marginBottom: 12, fontSize: 12 }}>
         {err}</div>}
 
+      {/* Agent pipeline — lights up whoever acted last */}
+      <section style={{ ...card, marginBottom: 12, padding: "10px 8px" }}>
+        <div style={{ display: "flex", alignItems: "center",
+                      justifyContent: "space-between", gap: 2 }}>
+          {[["⏱", "CLOCK", "#8b949e"], ["🔍", "RESEARCH", "#58a6ff"],
+            ["⚖️", "TRADER", "#e3b341"], ["⚡", "EXECUTOR", "#3fb950"],
+            ["📡", "MONITOR", "#bc8cff"]].map(([icon, name, c], i) => {
+            const active = log[0]?.agent === name ||
+              (name === "CLOCK" && session?.state === "running");
+            return (
+              <div key={name} style={{ display: "flex", alignItems: "center",
+                                       flex: i ? "1 1 0" : "0 0 auto" }}>
+                {i > 0 && <div style={{ flex: 1, height: 2, margin: "0 3px",
+                  background: "linear-gradient(90deg,#30363d,#484f58)" }} />}
+                <div style={{
+                  textAlign: "center", padding: "5px 7px", borderRadius: 8,
+                  border: `1.5px solid ${active ? c : "#30363d"}`,
+                  background: active ? `${c}22` : "transparent",
+                  boxShadow: active ? `0 0 10px ${c}55` : "none",
+                  transition: "all .3s" }}>
+                  <div style={{ fontSize: 14, lineHeight: 1 }}>{icon}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, color: c,
+                                letterSpacing: 0.5 }}>{name}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 9.5, color: "#484f58", textAlign: "center",
+                      marginTop: 6 }}>
+          research → setups → fills → monitored exits · risk guardrails at
+          every gate · Cassandra hot ⋈ Iceberg cold via Presto
+        </div>
+      </section>
+
       {/* Quick-glance (REQ-022) */}
       <section style={{ display: "grid", gap: 8,
                         gridTemplateColumns: "repeat(2, 1fr)", marginBottom: 12 }}>
