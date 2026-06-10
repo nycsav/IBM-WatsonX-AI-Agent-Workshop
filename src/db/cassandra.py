@@ -76,9 +76,11 @@ def shutdown() -> None:
 _STMTS = {
     "note_ins": ("INSERT INTO research_notes (session_id, note_id, ticker,"
                  " asset_class, as_of_date, direction, momentum, volatility,"
-                 " conviction, rationale, shortlisted)"
-                 " VALUES (?,?,?,?,?,?,?,?,?,?,?)"),
+                 " conviction, rationale, shortlisted, news_context)"
+                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"),
     "note_sel": "SELECT * FROM research_notes WHERE session_id = ?",
+    "note_ctx": ("UPDATE research_notes SET news_context = ?"
+                 " WHERE session_id = ? AND note_id = ?"),
     "setup_ins": ("INSERT INTO trade_setups (session_id, setup_id, note_id,"
                   " ticker, asset_class, direction, entry_price, quantity,"
                   " stop_loss, take_profit, trail_rule, risk_amount, status,"
@@ -120,13 +122,13 @@ class CassandraRepo(Repo):
         self.s.execute(self.p["note_ins"], (
             n.session_id, n.note_id, n.ticker, n.asset_class, n.as_of_date,
             n.direction, n.momentum, n.volatility, n.conviction, n.rationale,
-            n.shortlisted))
+            n.shortlisted, n.news_context))
 
     def notes(self, sid: uuid.UUID) -> List[ResearchNote]:
         return [ResearchNote(r.session_id, r.note_id, r.ticker, r.asset_class,
                              r.as_of_date.date(), r.direction, r.momentum,
                              r.volatility, float(r.conviction), r.rationale,
-                             r.shortlisted)
+                             r.shortlisted, getattr(r, "news_context", None))
                 for r in self.s.execute(self.p["note_sel"], (sid,))]
 
     # trade_setups
@@ -144,6 +146,9 @@ class CassandraRepo(Repo):
                            r.trail_rule, float(r.risk_amount), r.status,
                            r.reject_reason, r.created_date.date())
                 for r in self.s.execute(self.p["setup_sel"], (sid,))]
+
+    def update_note_context(self, sid, note_id, text) -> None:
+        self.s.execute(self.p["note_ctx"], (text, sid, note_id))
 
     def mark_setup(self, sid, setup_id, status) -> None:
         self.s.execute(self.p["setup_upd"], (status, sid, setup_id))

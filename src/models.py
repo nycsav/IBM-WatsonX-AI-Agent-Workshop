@@ -35,6 +35,7 @@ class ResearchNote:                      # REQ-002
     conviction: float                    # 0..1
     rationale: str
     shortlisted: bool = False
+    news_context: Optional[str] = None       # Perplexity enrichment (optional)
 
 
 @dataclass

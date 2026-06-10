@@ -19,6 +19,8 @@ class Repo:
     # research_notes
     def add_note(self, n: ResearchNote) -> None: raise NotImplementedError
     def notes(self, session_id: uuid.UUID) -> List[ResearchNote]: raise NotImplementedError
+    def update_note_context(self, session_id: uuid.UUID, note_id: uuid.UUID,
+                            text: str) -> None: raise NotImplementedError
 
     # trade_setups
     def add_setup(self, s: TradeSetup) -> None: raise NotImplementedError
@@ -57,6 +59,11 @@ class InMemoryRepo(Repo):
 
     def add_note(self, n): self._notes.append(n)
     def notes(self, sid): return [n for n in self._notes if n.session_id == sid]
+
+    def update_note_context(self, sid, note_id, text):
+        for n in self._notes:
+            if n.session_id == sid and n.note_id == note_id:
+                n.news_context = text
 
     def add_setup(self, s): self._setups.append(s)
     def setups(self, sid): return [s for s in self._setups if s.session_id == sid]

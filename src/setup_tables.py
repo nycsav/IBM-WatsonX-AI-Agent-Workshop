@@ -16,6 +16,7 @@ CASSANDRA_DDL = [
         session_id TIMEUUID, note_id TIMEUUID, ticker TEXT, asset_class TEXT,
         as_of_date DATE, direction TEXT, momentum TEXT, volatility TEXT,
         conviction DOUBLE, rationale TEXT, shortlisted BOOLEAN,
+        news_context TEXT,
         PRIMARY KEY ((session_id), note_id)
     ) WITH CLUSTERING ORDER BY (note_id DESC)""",
     """CREATE TABLE IF NOT EXISTS trade_setups (
@@ -59,6 +60,10 @@ def create_cassandra_tables() -> None:
     s = cassandra.connect()
     for ddl in CASSANDRA_DDL:
         s.execute(ddl)
+    try:                       # migration for tables created pre-enrichment
+        s.execute("ALTER TABLE research_notes ADD news_context TEXT")
+    except Exception:
+        pass                   # column already exists
     print(f"[OK] Cassandra tables ready in {settings.keyspace}")
 
 

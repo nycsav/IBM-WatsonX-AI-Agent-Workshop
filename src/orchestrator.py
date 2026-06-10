@@ -20,6 +20,7 @@ from .agents import executor, monitor, researcher, trader
 from .agents.executor import Ledger
 from .config import settings
 from .db.cassandra import CassandraRepo
+from .db.perplexity import PerplexityClient
 from .db.presto import PrestoClient
 from .market.clock import MarketClock, load_clock
 from .models import ClosedTrade
@@ -47,6 +48,7 @@ class Session:
         self.equity_curve: List[float] = []
         self.accept_new = True               # cleared by halt(keep_positions=True)
         self.started_at = dt.datetime.now()
+        self.perplexity = PerplexityClient() # optional enrichment (no key = off)
 
     # --- decision log (REQ-014) ----------------------------------------------
     def log(self, agent: str, ticker: str, msg: str) -> None:
@@ -104,12 +106,26 @@ class Session:
     def research_and_setup(self) -> None:
         notes = researcher.run(self.clock, self.repo, self.session_id,
                                settings.shortlist_size, self.log)
+        if self.perplexity.enabled:           # live news context, off hot path
+            asyncio.create_task(self.enrich_notes(
+                [n for n in notes if n.shortlisted]))
         positions = self.repo.positions(self.session_id)
         setups = trader.run(notes, positions, self.ledger.starting,
                             self.clock, self.repo, settings, self.log)
         for s in setups:
             self.setup_index[s.setup_id] = (s.note_id, s.trail_rule)
         self.pending_setups.extend(s for s in setups if s.status == "approved")
+
+    async def enrich_notes(self, notes) -> None:
+        """Perplexity Agent API (finance/web search) → news_context on the
+        shortlist. Best-effort: failures and missing key are silent skips;
+        trading never waits on this."""
+        for n in notes:
+            ctx = await self.perplexity.enrich(n.ticker, n.asset_class)
+            if ctx:
+                self.repo.update_note_context(self.session_id, n.note_id, ctx)
+                n.news_context = ctx
+                self.log("RESEARCH", n.ticker, f"news: {ctx[:160]}")
 
     def fill_pending(self) -> None:
         if not self.pending_setups:
@@ -311,5 +327,6 @@ ORDER BY state, pnl DESC"""
                               f"P/L {r[5]:>+10.2f}")
         except Exception as e:
             console.print(f"  federated view unavailable: {e}")
+        await self.perplexity.close()
         await self.presto.close()
         return s
